@@ -1,7 +1,7 @@
 # Airbnb Auto Reviewer 🐚
 
 **Hands-free guest reviews in under 5 seconds.**  
-A Tampermonkey userscript (and Chrome-extension starter kit) that clicks through Airbnb’s 7-step host-review wizard, leaves 5-star ratings, selects “what went well” tags, and fills public + private notes with your reusable templates. You manually press **Submit** at the end.
+A Tampermonkey userscript that clicks through Airbnb’s 7-step guest-review wizard, leaves 5-star ratings, selects “what went well” tags, and fills public + private notes with your reusable templates. You manually press **Submit** at the end.
 
 ---
 
