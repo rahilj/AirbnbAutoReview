@@ -1,0 +1,121 @@
+// ==UserScript==
+// @name         Airbnb Auto-Review (manual start / manual submit)
+// @namespace    https://my-personal-helpers
+// @version      1.0
+// @description  Click “Get started”, let the script finish Steps 2-6 & fill Step 7, then you press “Submit”.
+// @match        https://www.airbnb.com/hosting/reviews/*/edit*
+// @grant        none
+// ==/UserScript==
+
+/* ─── CONFIG ────────────────────────────────────────────────────────── */
+const CHIPS_TO_SELECT  = 3;     // “what went well” chips on Steps 2 & 4
+const HUMAN_DELAY      = 400;   // ms between major actions
+/* ───────────────────────────────────────────────────────────────────── */
+
+let guestName = 'Guest';
+console.log('Tampermonkey: Airbnb semi-automatic script injected');
+
+/* ─── CORE UTILITIES ───────────────────────────────────────────────── */
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+async function waitFor(selectorFn, timeout = 7000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const el = selectorFn();
+    if (el) return el;
+    await wait(120);
+  }
+  throw new Error('waitFor timed out');
+}
+
+async function clickBtn(label, timeout = 7000) {
+  const btn = await waitFor(() =>
+    [...document.querySelectorAll('button,[role="button"]')]
+      .find(b => b.textContent.toLowerCase().includes(label.toLowerCase()) &&
+                 !b.disabled &&
+                 b.getAttribute('aria-disabled') !== 'true' &&
+                 !b.closest('[aria-hidden="true"]')), timeout);
+  btn.click();
+  console.log(`🟢 Clicked "${label}"`);
+}
+
+async function fiveStar(groupKey) {
+  const star = await waitFor(() =>
+    [...document.querySelectorAll('input[type="radio"][value="5"]')]
+      .find(r => r.name.includes(groupKey) &&
+                 !r.disabled &&
+                 !r.closest('[aria-hidden="true"]')), 9000);
+  star.click();
+  star.dispatchEvent(new Event('change', { bubbles:true }));
+  console.log(`🟢 Set 5-star rating for ${groupKey}`);
+}
+
+function clickChips(n = CHIPS_TO_SELECT) {
+  const chips = [...document.querySelectorAll('button')]
+    .filter(b => b.getAttribute('role') === 'checkbox' &&
+                 !b.getAttribute('aria-pressed') &&
+                 !b.closest('[aria-hidden="true"]'))
+    .slice(0, n);
+  chips.forEach(c => c.click());
+  if (chips.length) console.log(`🟢 Selected ${chips.length} chips`);
+}
+
+async function fillTextAreaById(id, text) {
+  const ta = await waitFor(() => {
+    const el = document.getElementById(id);
+    return el && !el.closest('[aria-hidden="true"]') ? el : null;
+  }, 9000);
+
+  /* convince React */
+  const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype, 'value').set;
+  setter.call(ta, text);
+  if (ta._valueTracker) ta._valueTracker.setValue('');
+  ['input', 'change'].forEach(ev => ta.dispatchEvent(new Event(ev, { bubbles:true })));
+
+  console.log(`🟢 Filled #${id}`);
+}
+/* ───────────────────────────────────────────────────────────────────── */
+
+/* ─── ONE-OFF OBSERVER: dismiss “exit” overlay ──────────────────────── */
+new MutationObserver(() => {
+  const stay = [...document.querySelectorAll('button,[role="button"]')]
+    .find(b => /stay|continue editing|cancel/i.test(b.textContent));
+  if (stay) { stay.click(); console.log('🛑 Dismissed “exit” overlay'); }
+}).observe(document.body, { childList:true, subtree:true });
+
+/* ─── MAIN WIZARD ───────────────────────────────────────────────────── */
+async function runWizard() {
+  console.log('▶️  Wizard starting in 1 s…'); await wait(1000);
+
+  await fiveStar('CLEANLINESS');  clickChips(); await clickBtn('Next'); console.log('✅ Step 2 done'); await wait(HUMAN_DELAY);
+  await fiveStar('HOUSE_RULES');                  await clickBtn('Next'); console.log('✅ Step 3 done'); await wait(HUMAN_DELAY);
+  await fiveStar('COMMUNICATION'); clickChips(); await clickBtn('Next'); console.log('✅ Step 4 done'); await wait(HUMAN_DELAY);
+
+  await fillTextAreaById('public_review',
+    `${guestName} was a great guest! They kept Cory Cottage as their own home. We highly recommend them.`);
+  await clickBtn('Next'); console.log('✅ Step 5 done');
+
+  await clickBtn('Yes'); await clickBtn('Next'); console.log('✅ Step 6 done'); await wait(HUMAN_DELAY);
+
+  await fillTextAreaById('private_feedback',
+    `Thanks ${guestName} for supporting our small-business Airbnb rental. We look forward to hosting you again in the future.`);
+  console.log('🛑 Script stopped at Step 7 — review & press “Submit” when ready.');
+}
+
+/* ─── ENTRY POINT: after you click “Get started” ────────────────────── */
+(function attach() {
+  const btn = [...document.querySelectorAll('button')]
+    .find(b => /get\s*started/i.test(b.textContent));
+  if (!btn) return setTimeout(attach, 300);
+  if (btn.dataset.tmHooked) return;
+  btn.dataset.tmHooked = true;
+
+  btn.addEventListener('click', () => {
+    console.log('👋 Detected “Get started” click');
+    const header = document.querySelector('h1,h2')?.textContent || '';
+    const m = header.match(/\bfor\s+([A-Z][a-z]+)/i);
+    if (m) guestName = m[1];
+    runWizard().catch(console.error);
+  }, { once:true });
+})();
